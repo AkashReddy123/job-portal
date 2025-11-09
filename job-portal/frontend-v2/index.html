@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Job Portal - v2 (Canary)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>body{font-family:sans-serif;margin:2rem} .badge{padding:.25rem .5rem;background:#000;color:#fff;border-radius:6px}</style>
+</head>
+<body>
+  <h1>Job Portal <span class="badge">v2 Canary 🚀</span></h1>
+  <p>New UI variant (canary). Help us test! 💡</p>
+  <div id="jobs"></div>
+  <script>
+    async function load() {
+      const r = await fetch('/api/jobs');
+      const jobs = await r.json();
+      document.getElementById('jobs').innerHTML =
+        '<ul>' + jobs.map(j => `<li>${j.title} — <i>${j.company}</i></li>`).join('') + '</ul>';
+    }
+    load();
+  </script>
+</body>
+</html>

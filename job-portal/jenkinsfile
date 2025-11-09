@@ -1,0 +1,80 @@
+pipeline {
+  agent any
+
+  environment {
+    DOCKERHUB_USER = 'your-dockerhub-username'
+    DOCKERHUB_PASS = credentials('dockerhub-login')
+    EC2_HOST = "${EC2_IP}"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Build Images') {
+      steps {
+        echo 'Building all service images...'
+        bat 'docker compose build'
+      }
+    }
+
+    stage('Login & Push') {
+      steps {
+        bat """
+        echo %DOCKERHUB_PASS% | docker login -u %DOCKERHUB_USER% --password-stdin
+        """
+        bat """
+        docker tag job-portal-canary-web_v1:latest %DOCKERHUB_USER%/job-portal-canary-web_v1:latest || docker tag web_v1:latest %DOCKERHUB_USER%/job-portal-canary-web_v1:latest
+        docker tag job-portal-canary-web_v2:latest %DOCKERHUB_USER%/job-portal-canary-web_v2:latest || docker tag web_v2:latest %DOCKERHUB_USER%/job-portal-canary-web_v2:latest
+        docker tag job-portal-canary-backend:latest %DOCKERHUB_USER%/job-portal-canary-backend:latest || docker tag backend:latest %DOCKERHUB_USER%/job-portal-canary-backend:latest
+
+        docker push %DOCKERHUB_USER%/job-portal-canary-web_v1:latest
+        docker push %DOCKERHUB_USER%/job-portal-canary-web_v2:latest
+        docker push %DOCKERHUB_USER%/job-portal-canary-backend:latest
+        """
+      }
+    }
+
+    stage('Deploy to EC2 (90/10 Canary)') {
+      steps {
+        sshagent(credentials: ['ec2-ssh']) {
+          sh """
+          set -e
+          ssh -o StrictHostKeyChecking=no ubuntu@${EC2_HOST} 'mkdir -p /opt/canary'
+          scp -o StrictHostKeyChecking=no -r docker-compose.yml nginx monitoring ubuntu@${EC2_HOST}:/opt/canary/
+          ssh -o StrictHostKeyChecking=no ubuntu@${EC2_HOST} '
+            cd /opt/canary &&
+            sed -i "s|image: nginx:alpine|image: nginx:alpine|g" docker-compose.yml &&
+            docker compose pull || true &&
+            docker compose up -d --build
+          '
+          """
+        }
+      }
+    }
+
+    stage('Promote to 100% (switch config & restart)') {
+      when { expression { return params.PROMOTE == true } }
+      steps {
+        sshagent(credentials: ['ec2-ssh']) {
+          sh """
+          ssh -o StrictHostKeyChecking=no ubuntu@${EC2_HOST} '
+            sudo cp /opt/canary/nginx/nginx_100.conf /opt/canary/nginx/active.conf || true &&
+            docker restart nginx_lb
+          '
+          """
+        }
+      }
+    }
+  }
+
+  parameters {
+    booleanParam(name: 'PROMOTE', defaultValue: false, description: 'Promote canary (v2) to 100%')
+  }
+
+  post {
+    success { echo '✅ Done' }
+    failure { echo '❌ Failed' }
+  }
+}

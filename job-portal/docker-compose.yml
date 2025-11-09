@@ -1,0 +1,78 @@
+services:
+  web_v1:
+    build: ./frontend-v1
+    container_name: web_v1
+
+  web_v2:
+    build: ./frontend-v2
+    container_name: web_v2
+
+  backend:
+    build: ./backend
+    container_name: backend
+    environment:
+      - PORT=5000
+    expose:
+      - "5000"
+
+  nginx_lb:
+    image: nginx:alpine
+    container_name: nginx_lb
+    depends_on:
+      - web_v1
+      - web_v2
+      - backend
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx_base.conf:/etc/nginx/nginx.conf:ro
+      # Active file switches between 90/10 and 100% configs:
+      - ./nginx/nginx_90_10.conf:/etc/nginx/conf.d/active.conf:ro
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - backend
+      - cadvisor
+      - node-exporter
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8080:8080"
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    pid: host
+    network_mode: bridge
+
+volumes:
+  grafana_data:

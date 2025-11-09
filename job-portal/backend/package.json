@@ -1,0 +1,11 @@
+{
+  "name": "job-portal-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "prom-client": "^15.1.3",
+    "cors": "^2.8.5"
+  }
+}
